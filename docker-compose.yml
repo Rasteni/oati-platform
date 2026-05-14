@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    container_name: oati_app
+    ports:
+      - "8000:8000"
+    volumes:
+      # БД сохраняется на хосте — после docker compose down данные остаются
+      - ./data:/app/data
+      # Загруженные фото объектов
+      - ./uploads:/app/uploads
+      # Код тоже монтируем (можно править без пересборки)
+      - ./backend/app:/app/backend/app
+      - ./frontend:/app/frontend
+    environment:
+      DB_PATH: /app/data/oati.db
+      PYTHONPATH: /app/backend
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

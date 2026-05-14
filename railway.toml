@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Healthcheck — Railway будет проверять, что приложение запустилось
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100

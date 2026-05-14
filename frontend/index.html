@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ОАТИ · Геоаналитика</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="brand-logo">OA</div>
+      <span class="brand-name">ОАТИ</span>
+      <span class="brand-sub">Геоаналитика объектов контроля</span>
+    </div>
+
+    <nav class="view-tabs">
+      <button class="tab active" data-view="map">Карта</button>
+      <button class="tab" data-view="analytics">Дашборд</button>
+    </nav>
+
+    <div class="kpi-bar">
+      <div class="db-badge" title="Все данные сохраняются в БД и доступны после перезапуска">
+        <span class="db-badge-dot"></span>
+        Сохранено в БД
+      </div>
+      <div class="kpi accent">
+        <span class="kpi-label">Всего</span>
+        <span class="kpi-value" id="stat-total">0</span>
+      </div>
+      <div class="kpi ok">
+        <span class="kpi-label">Норма</span>
+        <span class="kpi-value" id="stat-ok">0</span>
+      </div>
+      <div class="kpi warn">
+        <span class="kpi-label">Замечания</span>
+        <span class="kpi-value" id="stat-warn">0</span>
+      </div>
+      <div class="kpi bad">
+        <span class="kpi-label">Нарушения</span>
+        <span class="kpi-value" id="stat-bad">0</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Отображено</span>
+        <span class="kpi-value" id="stat-visible">0</span>
+      </div>
+    </div>
+  </header>
+
+  <aside>
+    <!-- Импорт -->
+    <div class="section">
+      <div class="section-title">Импорт данных</div>
+      <label class="uploader" id="dropzone">
+        <div class="uploader-icon">↑</div>
+        <div class="uploader-title">CSV или Excel</div>
+        <div class="uploader-sub">или перетащите файл сюда</div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls" />
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="replace-mode" />
+        <span>Заменить существующие данные</span>
+      </label>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-demo" title="Добавляет 500 случайных объектов. Включите чекбокс выше чтобы заменить.">+500 демо</button>
+        <button class="btn" id="btn-template">Шаблон</button>
+        <button class="btn" id="btn-export">Экспорт</button>
+      </div>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn danger" id="btn-clear">Очистить базу</button>
+      </div>
+    </div>
+
+    <!-- Загрузка из data.mos.ru -->
+    <div class="section">
+      <div class="section-title">Открытые данные Москвы</div>
+      <select id="mos-dataset-select" class="select">
+        <option value="">— выберите датасет —</option>
+      </select>
+      <input type="text" id="mos-api-key" class="select"
+             placeholder="API-ключ (необязательно)"
+             style="margin-top:6px"/>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn primary" id="btn-mos-load">Загрузить</button>
+      </div>
+      <div class="uploader-sub" style="margin-top:6px; line-height:1.4">
+        Загружает первые 500 записей из <a href="https://data.mos.ru" target="_blank" style="color:var(--accent)">data.mos.ru</a>.
+        Бесплатный ключ — в профиле портала.
+      </div>
+    </div>
+
+    <!-- Подложка карты -->
+    <div class="section">
+      <div class="section-title">Подложка карты</div>
+      <select id="base-layer-select" class="select"></select>
+    </div>
+
+    <!-- Режим карты -->
+    <div class="section">
+      <div class="section-title">Режим карты</div>
+      <div class="radio-group" id="map-mode">
+        <label class="radio-row active" data-mode="points">
+          <input type="radio" name="mapmode" value="points" checked />
+          <span>Точки объектов</span>
+        </label>
+        <label class="radio-row" data-mode="clusters">
+          <input type="radio" name="mapmode" value="clusters" />
+          <span>Кластеры DBSCAN</span>
+        </label>
+        <label class="radio-row" data-mode="heat">
+          <input type="radio" name="mapmode" value="heat" />
+          <span>Теплокарта</span>
+        </label>
+        <label class="radio-row" data-mode="choropleth">
+          <input type="radio" name="mapmode" value="choropleth" />
+          <span>Хороплет по округам</span>
+        </label>
+      </div>
+      <div id="choropleth-options" style="display:none;margin-top:8px">
+        <select id="choropleth-metric" class="select">
+          <option value="density">Плотность объектов</option>
+          <option value="violations">Число нарушений</option>
+          <option value="critical_ratio">Доля нарушений</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Доп. слои -->
+    <div class="section">
+      <div class="section-title">Дополнительные слои</div>
+      <div class="toggle-row active" data-layer="districts">
+        <span>Границы округов</span>
+        <div class="switch"></div>
+      </div>
+    </div>
+
+    <!-- Статусы -->
+    <div class="section">
+      <div class="section-title">Фильтр по статусу <span class="count" id="status-count">·</span></div>
+      <div id="status-filters"></div>
+    </div>
+
+    <!-- Округа -->
+    <div class="section">
+      <div class="section-title">
+        Округа Москвы
+        <button class="link-btn" id="districts-reset" style="display:none">сбросить</button>
+      </div>
+      <div id="district-filters"></div>
+    </div>
+
+    <!-- Даты -->
+    <div class="section">
+      <div class="section-title">Период последней проверки</div>
+      <div class="date-row"><label>от</label><input type="date" id="date-from" /></div>
+      <div class="date-row"><label>до</label><input type="date" id="date-to" /></div>
+      <div class="btn-row">
+        <button class="btn" data-quick="7">7 дн</button>
+        <button class="btn" data-quick="30">30 дн</button>
+        <button class="btn" data-quick="90">90 дн</button>
+        <button class="btn" data-quick="0">всё</button>
+      </div>
+    </div>
+
+    <!-- Типы -->
+    <div class="section" id="type-section" style="display:none">
+      <div class="section-title">Тип объекта</div>
+      <div id="type-filters"></div>
+    </div>
+  </aside>
+
+  <!-- === ВКЛАДКА: КАРТА === -->
+  <main class="view-map active">
+    <div id="map"></div>
+
+    <div class="empty-state" id="empty-state">
+      <strong>Нет данных</strong>
+      Загрузите CSV/Excel или нажмите «Демо»
+    </div>
+
+    <div class="legend" id="legend" style="display:none">
+      <h4>Условные обозначения</h4>
+      <div id="legend-body"></div>
+    </div>
+
+    <div class="loading" id="loading" style="display:none">
+      <div class="spinner"></div>
+      <span>Загрузка…</span>
+    </div>
+
+    <!-- Тайм-слайдер -->
+    <div class="timeslider" id="timeslider" style="display:none">
+      <div class="ts-header">
+        <div class="ts-title">
+          <span class="ts-label">Период</span>
+          <span class="ts-current" id="ts-current">—</span>
+        </div>
+        <div class="ts-controls">
+          <button class="ts-btn" id="ts-play" title="Воспроизвести">▶</button>
+          <button class="ts-btn" id="ts-step-back" title="Назад">‹</button>
+          <button class="ts-btn" id="ts-step-fwd" title="Вперёд">›</button>
+          <button class="ts-btn" id="ts-close" title="Закрыть">×</button>
+        </div>
+      </div>
+      <div class="ts-track">
+        <canvas id="ts-chart" height="44"></canvas>
+        <input type="range" id="ts-slider" min="0" max="100" value="0" />
+      </div>
+    </div>
+
+    <button class="floating-btn" id="ts-open">⏱ Хронология</button>
+    <button class="floating-btn" id="compare-toggle" style="left:170px">⇄ Сравнить периоды</button>
+    <button class="floating-btn" id="bbox-toggle" style="left:340px">▢ Только видимое</button>
+
+    <div id="map-b" style="display:none"></div>
+    <div class="split-divider" style="display:none">
+      <div class="split-label-a">Период A</div>
+      <div class="split-label-b">Период B</div>
+    </div>
+    <div id="compare-panel" style="display:none">
+      <div class="compare-row">
+        <span class="compare-label">A</span>
+        <input type="date" id="cmp-from-a" />
+        <span>—</span>
+        <input type="date" id="cmp-to-a" />
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">B</span>
+        <input type="date" id="cmp-from-b" />
+        <span>—</span>
+        <input type="date" id="cmp-to-b" />
+      </div>
+      <button class="btn primary" id="cmp-apply">Применить</button>
+    </div>
+  </main>
+
+  <!-- === ВКЛАДКА: ДАШБОРД === -->
+  <main class="view-analytics">
+    <div class="dashboard-header">
+      <div>
+        <div class="dashboard-title">Сводный дашборд</div>
+        <div class="dashboard-subtitle">Аналитика по объектам контроля ОАТИ</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <!-- KPI плитки -->
+      <div class="widget col-3 widget-kpi">
+        <div class="widget-header">
+          <span class="widget-label">Всего объектов</span>
+          <div class="widget-icon icon-accent">▣</div>
+        </div>
+        <div class="widget-kpi-value" id="dash-total">0</div>
+      </div>
+
+      <div class="widget col-3 widget-kpi">
+        <div class="widget-header">
+          <span class="widget-label">Норма</span>
+          <div class="widget-icon icon-ok">✓</div>
+        </div>
+        <div class="widget-kpi-value" style="color:var(--status-ok)" id="dash-ok">0</div>
+        <div class="widget-kpi-sub" id="dash-ok-pct">— от общего</div>
+      </div>
+
+      <div class="widget col-3 widget-kpi">
+        <div class="widget-header">
+          <span class="widget-label">Замечания</span>
+          <div class="widget-icon icon-warn">!</div>
+        </div>
+        <div class="widget-kpi-value" style="color:var(--status-warn)" id="dash-warn">0</div>
+        <div class="widget-kpi-sub" id="dash-warn-pct">— от общего</div>
+      </div>
+
+      <div class="widget col-3 widget-kpi">
+        <div class="widget-header">
+          <span class="widget-label">Нарушения</span>
+          <div class="widget-icon icon-bad">⚠</div>
+        </div>
+        <div class="widget-kpi-value" style="color:var(--status-violation)" id="dash-bad">0</div>
+        <div class="widget-kpi-sub" id="dash-bad-pct">— от общего</div>
+      </div>
+
+      <!-- Графики -->
+      <div class="widget col-4">
+        <div class="widget-header">
+          <div>
+            <div class="widget-title">Распределение по статусам</div>
+            <div class="widget-subtitle">Все объекты</div>
+          </div>
+        </div>
+        <canvas id="chart-statuses" height="240"></canvas>
+      </div>
+
+      <div class="widget col-4">
+        <div class="widget-header">
+          <div>
+            <div class="widget-title">Топ округов · нарушения</div>
+            <div class="widget-subtitle">По убыванию</div>
+          </div>
+        </div>
+        <canvas id="chart-districts" height="240"></canvas>
+      </div>
+
+      <div class="widget col-4">
+        <div class="widget-header">
+          <div>
+            <div class="widget-title">Топ типов объектов</div>
+            <div class="widget-subtitle">По количеству</div>
+          </div>
+        </div>
+        <canvas id="chart-types" height="240"></canvas>
+      </div>
+
+      <div class="widget col-12">
+        <div class="widget-header">
+          <div>
+            <div class="widget-title">Динамика проверок</div>
+            <div class="widget-subtitle">Помесячно, стек по статусам</div>
+          </div>
+        </div>
+        <canvas id="chart-timeline" height="200"></canvas>
+      </div>
+
+      <div class="widget col-12">
+        <div class="widget-header">
+          <div>
+            <div class="widget-title">
+              Прогноз на 6 месяцев
+              <select id="forecast-metric" class="select-inline">
+                <option value="violations">Нарушения</option>
+                <option value="all">Все проверки</option>
+                <option value="critical">Критические</option>
+              </select>
+            </div>
+            <div class="widget-subtitle" id="forecast-trend">Линейный тренд + сезонность</div>
+          </div>
+        </div>
+        <canvas id="chart-forecast" height="200"></canvas>
+      </div>
+
+      <div class="widget col-12">
+        <div class="widget-header">
+          <div>
+            <div class="widget-title">Производительность инспекторов</div>
+            <div class="widget-subtitle">Сводка по сотрудникам</div>
+          </div>
+        </div>
+        <table class="data-table" id="inspectors-table">
+          <thead>
+            <tr>
+              <th>Инспектор</th>
+              <th>Проверок</th>
+              <th>Уник. объектов</th>
+              <th>Нарушений</th>
+              <th>Доля нарушений</th>
+              <th>Ср. интервал</th>
+              <th>Последняя</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="widget col-12">
+        <div class="widget-header">
+          <div>
+            <div class="widget-title">Сводка по округам</div>
+            <div class="widget-subtitle">Доля нарушений в каждом округе</div>
+          </div>
+        </div>
+        <table class="data-table" id="districts-table">
+          <thead>
+            <tr>
+              <th>Код</th><th>Округ</th><th>Всего</th>
+              <th>Норма</th><th>Замечания</th><th>Нарушения</th>
+              <th>Доля нарушений</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
